@@ -1,0 +1,18 @@
+# Zależności
+node_modules/
+
+# Pliki środowiskowe
+.env
+
+# Baza danych
+*.sqlite
+*.sqlite3
+*.db
+
+# Logi
+logs/
+*.log
+
+# Pliki tymczasowe
+tmp/
+.DS_Store
