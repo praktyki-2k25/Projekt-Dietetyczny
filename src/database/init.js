@@ -1,20 +1,15 @@
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const bcrypt = require('bcrypt');
+const { db, run, query, queryOne } = require('./connection');
 require('dotenv').config();
 
-// Ścieżka do pliku bazy danych
-const dbPath = path.resolve(process.env.DATABASE_PATH || './database.sqlite');
-
-// Utworzenie połączenia z bazą danych
-const db = new sqlite3.Database(dbPath, (err) => {
-  if (err) {
-    console.error('Błąd podczas łączenia z bazą danych:', err.message);
-  } else {
-    console.log('Połączenie z bazą danych SQLite zostało nawiązane.');
-    
+async function initializeDatabase() {
+  console.log('Inicjalizacja bazy danych...');
+  
+  try {
     // Tworzenie tabeli users
-    db.run(`CREATE TABLE IF NOT EXISTS users (
+    await run(`CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       email TEXT UNIQUE NOT NULL,
       password TEXT NOT NULL,
@@ -27,96 +22,137 @@ const db = new sqlite3.Database(dbPath, (err) => {
       weight_goal REAL,
       gender TEXT,
       activity_level TEXT DEFAULT 'moderate'
-    )`, (err) => {
+    )`);
+    
+    console.log('Tabela users utworzona');
+    
+    // Tworzenie tabeli meals
+    await run(`CREATE TABLE IF NOT EXISTS meals (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      calories INTEGER,
+      protein REAL,
+      carbs REAL,
+      fat REAL,
+      meal_date DATE DEFAULT CURRENT_DATE,
+      meal_type TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      ai_analysis TEXT,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )`);
+    
+    console.log('Tabela meals utworzona');
+    
+    // Tworzenie tabeli ai_prompts
+    await run(`CREATE TABLE IF NOT EXISTS ai_prompts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT UNIQUE NOT NULL,
+      prompt_text TEXT NOT NULL,
+      description TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`);
+    
+    console.log('Tabela ai_prompts utworzona');
+    
+    await insertDefaultData();
+    console.log('Inicjalizacja bazy danych zakończona');
+    
+    // Zamknij połączenie z bazą danych
+    db.close((err) => {
       if (err) {
-        console.error('Błąd podczas tworzenia tabeli users:', err.message);
+        console.error('Błąd podczas zamykania połączenia z bazą danych:', err.message);
       } else {
-        console.log('Tabela users została utworzona lub już istnieje.');
-
-        // Dodanie przykładowego użytkownika dla testów
-        const testUser = {
-          email: 'test@example.com',
-          password: bcrypt.hashSync('haslo123', 10),
-          username: 'TestowyUżytkownik',
-          weight: 80.5,
-          height: 180,
-          age: 30,
-          bmi: 24.8,
-          weight_goal: 75
-        };
-
-        db.get('SELECT id FROM users WHERE email = ?', [testUser.email], (err, user) => {
-          if (err) {
-            console.error('Błąd podczas sprawdzania istniejącego użytkownika:', err.message);
-          } else if (!user) {
-            // Dodaj użytkownika testowego jeśli nie istnieje
-            db.run(`
-              INSERT INTO users (email, password, username, weight, height, age, bmi, weight_goal)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            `, [
-              testUser.email,
-              testUser.password,
-              testUser.username,
-              testUser.weight,
-              testUser.height,
-              testUser.age,
-              testUser.bmi,
-              testUser.weight_goal
-            ], function(err) {
-              if (err) {
-                console.error('Błąd podczas dodawania użytkownika testowego:', err.message);
-              } else {
-                console.log('Dodano użytkownika testowego z ID:', this.lastID);
-              }
-              
-              // Tworzenie tabeli meals po utworzeniu użytkownika
-              createMealsTable();
-            });
-          } else {
-            console.log('Użytkownik testowy już istnieje.');
-            // Tworzenie tabeli meals jeśli użytkownik już istnieje
-            createMealsTable();
-          }
-        });
+        console.log('Połączenie z bazą danych zostało zamknięte.');
       }
+      process.exit(0);
     });
+  } catch (error) {
+    console.error('Błąd podczas inicjalizacji bazy danych:', error);
+    process.exit(1);
   }
-});
-
-// Funkcja tworząca tabelę meals
-function createMealsTable() {
-  db.run(`CREATE TABLE IF NOT EXISTS meals (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    name TEXT NOT NULL,
-    description TEXT,
-    calories INTEGER,
-    protein REAL,
-    carbs REAL,
-    fat REAL,
-    meal_date DATE DEFAULT CURRENT_DATE,
-    meal_type TEXT, /* breakfast, lunch, dinner, snack */
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-  )`, (err) => {
-    if (err) {
-      console.error('Błąd podczas tworzenia tabeli meals:', err.message);
-    } else {
-      console.log('Tabela meals została utworzona lub już istnieje.');
-      
-      // Dodaj przykładowe posiłki
-      addExampleMeals();
-    }
-  });
 }
 
-// Funkcja dodająca przykładowe posiłki
-function addExampleMeals() {
-  db.get('SELECT id FROM users WHERE email = ?', ['test@example.com'], (err, user) => {
-    if (err || !user) {
-      console.error('Błąd podczas pobierania użytkownika testowego:', err ? err.message : 'Brak użytkownika');
-      closeDbConnection();
-      return;
+async function insertDefaultData() {
+  try {
+    // Dodanie testowego użytkownika
+    const testPassword = bcrypt.hashSync('haslo123', 10);
+    
+    const existingUser = await queryOne('SELECT id FROM users WHERE email = ?', ['test@example.com']);
+    
+    if (!existingUser) {
+      await run(`
+        INSERT INTO users (email, password, username, weight, height, age, bmi, weight_goal, gender)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        'test@example.com',
+        testPassword,
+        'TestowyUżytkownik',
+        80.5,
+        180,
+        30,
+        24.8,
+        75,
+        'male'
+      ]);
+      console.log('Testowy użytkownik dodany');
+    } else {
+      console.log('Testowy użytkownik już istnieje');
+    }
+    
+    // Dodanie przykładowych posiłków dla testowego użytkownika
+    await addExampleMeals();
+    
+    // Dodanie domyślnych promptów AI
+    const defaultPrompts = [
+      {
+        name: 'meal_analysis',
+        prompt_text: `Przeanalizuj ten posiłek: {meal_name}, {meal_description}. 
+Oszacuj jego wartości odżywcze (kalorie, białko, węglowodany, tłuszcz) 
+i podaj krótką analizę pod kątem zdrowego odżywiania.`,
+        description: 'Analizuje wartości odżywcze posiłku'
+      },
+      {
+        name: 'diet_recommendations',
+        prompt_text: `Na podstawie moich danych: waga {weight}kg, wzrost {height}cm, wiek {age}, 
+oraz historii posiłków z ostatnich dni, zaproponuj plan dietetyczny na następny tydzień,
+który pomoże osiągnąć moje cele zdrowotne.`,
+        description: 'Generuje rekomendacje dietetyczne'
+      },
+      {
+        name: 'health_insight',
+        prompt_text: `Przeanalizuj moje nawyki żywieniowe z ostatnich {days} dni.
+Wskaż mocne strony mojej diety oraz obszary, które można poprawić.`,
+        description: 'Analizuje nawyki żywieniowe'
+      }
+    ];
+    
+    for (const prompt of defaultPrompts) {
+      const existingPrompt = await queryOne('SELECT id FROM ai_prompts WHERE name = ?', [prompt.name]);
+      
+      if (!existingPrompt) {
+        await run(
+          'INSERT INTO ai_prompts (name, prompt_text, description) VALUES (?, ?, ?)',
+          [prompt.name, prompt.prompt_text, prompt.description]
+        );
+        console.log(`Prompt "${prompt.name}" dodany`);
+      } else {
+        console.log(`Prompt "${prompt.name}" już istnieje`);
+      }
+    }
+  } catch (error) {
+    console.error('Błąd podczas dodawania danych domyślnych:', error);
+    throw error;
+  }
+}
+
+async function addExampleMeals() {
+  try {
+    const user = await queryOne('SELECT id FROM users WHERE email = ?', ['test@example.com']);
+    
+    if (!user) {
+      throw new Error('Nie znaleziono testowego użytkownika');
     }
     
     const userId = user.id;
@@ -165,49 +201,40 @@ function addExampleMeals() {
       }
     ];
     
-    let insertedCount = 0;
-    const totalToInsert = exampleMeals.length;
+    // Sprawdź czy posiłki już istnieją
+    const existingMeals = await query('SELECT name FROM meals WHERE user_id = ?', [userId]);
+    const existingMealNames = existingMeals.map(meal => meal.name);
     
-    exampleMeals.forEach(meal => {
-      db.run(`
-        INSERT INTO meals (
-          user_id, name, description, calories, protein, 
-          carbs, fat, meal_date, meal_type
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `, [
-        userId,
-        meal.name,
-        meal.description,
-        meal.calories,
-        meal.protein,
-        meal.carbs,
-        meal.fat,
-        meal.meal_date,
-        meal.meal_type
-      ], function(err) {
-        if (err) {
-          console.error(`Błąd podczas dodawania posiłku ${meal.name}:`, err.message);
-        } else {
-          console.log(`Dodano posiłek ${meal.name} z ID:`, this.lastID);
-        }
+    for (const meal of exampleMeals) {
+      if (!existingMealNames.includes(meal.name)) {
+        await run(`
+          INSERT INTO meals (
+            user_id, name, description, calories, protein, 
+            carbs, fat, meal_date, meal_type
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          userId,
+          meal.name,
+          meal.description,
+          meal.calories,
+          meal.protein,
+          meal.carbs,
+          meal.fat,
+          meal.meal_date,
+          meal.meal_type
+        ]);
         
-        insertedCount++;
-        if (insertedCount === totalToInsert) {
-          closeDbConnection();
-        }
-      });
-    });
-  });
+        console.log(`Dodano posiłek ${meal.name}`);
+      } else {
+        console.log(`Posiłek ${meal.name} już istnieje`);
+      }
+    }
+  } catch (error) {
+    console.error('Błąd podczas dodawania przykładowych posiłków:', error);
+    throw error;
+  }
 }
 
-// Zamknięcie połączenia z bazą danych
-function closeDbConnection() {
-  db.close((err) => {
-    if (err) {
-      console.error('Błąd podczas zamykania połączenia z bazą danych:', err.message);
-    } else {
-      console.log('Połączenie z bazą danych zostało zamknięte.');
-    }
-  });
-}
+// Uruchomienie inicjalizacji
+initializeDatabase();

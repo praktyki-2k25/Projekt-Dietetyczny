@@ -1,329 +1,224 @@
-// Serwis AI do analizy posiłków i składników odżywczych
-// W rzeczywistej aplikacji tutaj będzie integracja z OpenAI lub innym serwisem AI
+const { queryOne } = require('../database/connection');
+require('dotenv').config();
 
-class AIService {
-  constructor() {
-    // Konfiguracja API AI
-    this.config = {
-      mockDelay: 1000, // Symulacja opóźnienia API (w ms)
-      mockMode: true // Tryb symulacji (bez rzeczywistych zapytań API)
-    };
-
-    // Baza popularnych składników i ich wartości odżywczych
-    this.ingredientsDatabase = {
-      'jajko': { calories: 155, protein: 12.5, carbs: 1.1, fat: 10.8, allergens: ['jajka'] },
-      'mleko': { calories: 42, protein: 3.4, carbs: 5.0, fat: 1.0, allergens: ['mleko'] },
-      'kurczak': { calories: 165, protein: 31, carbs: 0, fat: 3.6, allergens: [] },
-      'ryż': { calories: 130, protein: 2.7, carbs: 28, fat: 0.3, allergens: [] },
-      'makaron': { calories: 158, protein: 5.8, carbs: 31, fat: 0.9, allergens: ['gluten'] },
-      'chleb': { calories: 265, protein: 9.4, carbs: 49, fat: 3.2, allergens: ['gluten'] },
-      'masło': { calories: 717, protein: 0.9, carbs: 0.1, fat: 81, allergens: ['mleko'] },
-      'oliwa': { calories: 884, protein: 0, carbs: 0, fat: 100, allergens: [] },
-      'tuńczyk': { calories: 132, protein: 28, carbs: 0, fat: 1.0, allergens: ['ryby'] },
-      'łosoś': { calories: 206, protein: 22, carbs: 0, fat: 13, allergens: ['ryby'] },
-      'jabłko': { calories: 52, protein: 0.3, carbs: 14, fat: 0.2, allergens: [] },
-      'banan': { calories: 89, protein: 1.1, carbs: 23, fat: 0.3, allergens: [] },
-      'marchew': { calories: 41, protein: 0.9, carbs: 10, fat: 0.2, allergens: [] },
-      'brokuł': { calories: 34, protein: 2.8, carbs: 7, fat: 0.4, allergens: [] },
-      'ziemniak': { calories: 77, protein: 2, carbs: 17, fat: 0.1, allergens: [] },
-      'orzechy': { calories: 607, protein: 21, carbs: 20, fat: 54, allergens: ['orzechy'] },
-      'czekolada': { calories: 546, protein: 4.9, carbs: 61, fat: 31, allergens: ['mleko'] },
-      'jogurt': { calories: 61, protein: 3.5, carbs: 4.7, fat: 3.3, allergens: ['mleko'] },
-      'ser': { calories: 402, protein: 25, carbs: 1.3, fat: 33, allergens: ['mleko'] },
-      'pomidor': { calories: 18, protein: 0.9, carbs: 3.9, fat: 0.2, allergens: [] }
-    };
+/**
+ * Punkt integracji z API modelu językowego (np. LangChain)
+ * @param {Object} data - Dane posiłku do analizy
+ * @returns {Promise<Object>} - Analiza AI
+ */
+async function getAiAnalysis(data) {
+  // Sprawdzamy czy AI jest włączone
+  if (process.env.AI_ENABLED !== 'true') {
+    return null;
   }
-
-  // Metoda do analizy posiłku
-  async analyzeMeal(mealData) {
-    if (this.config.mockMode) {
-      return new Promise((resolve) => {
-        setTimeout(() => resolve(this._mockAnalyzeMeal(mealData)), this.config.mockDelay);
-      });
-    } else {
-      // Tutaj byłoby prawdziwe wywołanie API AI
-      throw new Error('Prawdziwa integracja z API AI nie jest jeszcze zaimplementowana');
-    }
-  }
-
-  // Metoda do symulacji analizy posiłku
-  _mockAnalyzeMeal(mealData) {
-    try {
-      // Parsowanie składników
-      const ingredients = this._parseIngredients(mealData.ingredients || mealData.description || '');
-      
-      // Analiza wartości odżywczych
-      const nutritionalValues = this._calculateNutritionalValues(ingredients);
-      
-      // Porównanie z wartościami podanymi przez użytkownika
-      const comparisonResult = this._compareUserValues(nutritionalValues, mealData);
-      
-      // Wykrywanie alergenów
-      const allergens = this._detectAllergens(ingredients);
-      
-      // Generowanie sugestii
-      const suggestions = this._generateSuggestions(nutritionalValues, mealData, ingredients);
-      
-      // Przygotowanie odpowiedzi
-      return {
-        meal_name: mealData.name,
-        original_values: {
-          calories: mealData.calories || 0,
-          protein: mealData.protein || 0,
-          carbs: mealData.carbs || 0,
-          fat: mealData.fat || 0
-        },
-        estimated_values: nutritionalValues,
-        comparison: comparisonResult,
-        ingredients_analysis: ingredients.map(i => ({
-          name: i.name,
-          estimated_weight: i.weight,
-          nutritional_values: i.nutritionalValues
-        })),
-        allergens: allergens,
-        suggestions: suggestions,
-        health_score: this._calculateHealthScore(nutritionalValues, mealData.meal_type),
-        confidence_score: 0.85 // Symulacja pewności wyniku
-      };
-    } catch (error) {
-      console.error('Błąd podczas analizy posiłku:', error);
-      return {
-        error: 'Nie udało się przeanalizować posiłku',
-        meal_name: mealData.name,
-        message: 'Spróbuj podać bardziej szczegółowy opis składników'
-      };
-    }
-  }
-
-  // Parsowanie składników z opisu
-  _parseIngredients(description) {
-    const ingredients = [];
-    const text = description.toLowerCase();
+  
+  try {
+    // W tym miejscu można zintegrować LangChain lub inny model językowy
+    // Przykładowy kod dla integracji:
+    /*
+    const { ChatOpenAI } = require('@langchain/openai');
+    const { PromptTemplate } = require('langchain/prompts');
     
-    // Próba znalezienia znanych składników w opisie
-    Object.keys(this.ingredientsDatabase).forEach(ingredient => {
-      if (text.includes(ingredient)) {
-        // Próba znalezienia ilości (np. "100g ryżu", "2 jajka")
-        const weightMatch = new RegExp(`(\\d+)\\s*(g|gram|gramów)\\s*${ingredient}`, 'i').exec(text);
-        const countMatch = new RegExp(`(\\d+)\\s*${ingredient}`, 'i').exec(text);
-        
-        let weight = 0;
-        if (weightMatch) {
-          // Jeśli podano wagę w gramach
-          weight = parseInt(weightMatch[1]);
-        } else if (countMatch) {
-          // Jeśli podano liczbę sztuk
-          const count = parseInt(countMatch[1]);
-          
-          // Przykładowe wagi dla różnych produktów
-          const defaultWeights = {
-            'jajko': 50, // 1 jajko ~ 50g
-            'jabłko': 180, // 1 jabłko ~ 180g
-            'banan': 120, // 1 banan ~ 120g
-            'chleb': 40, // 1 kromka ~ 40g
-            'ziemniak': 150 // 1 ziemniak ~ 150g
-          };
-          
-          weight = count * (defaultWeights[ingredient] || 100);
-        } else {
-          // Domyślna waga, gdy nie podano ilości
-          weight = 100;
-        }
-        
-        // Obliczenie wartości odżywczych dla podanej wagi
-        const dbValues = this.ingredientsDatabase[ingredient];
-        const nutritionalValues = {
-          calories: Math.round((dbValues.calories * weight) / 100),
-          protein: parseFloat(((dbValues.protein * weight) / 100).toFixed(1)),
-          carbs: parseFloat(((dbValues.carbs * weight) / 100).toFixed(1)),
-          fat: parseFloat(((dbValues.fat * weight) / 100).toFixed(1))
-        };
-        
-        ingredients.push({
-          name: ingredient,
-          weight: weight,
-          nutritionalValues: nutritionalValues
-        });
-      }
+    const model = new ChatOpenAI({
+      modelName: "gpt-3.5-turbo",
+      temperature: 0.7,
     });
     
-    // Jeśli nie znaleziono żadnych składników, dodaj generyczne wartości
-    if (ingredients.length === 0) {
-      // Dodaj przykładowe wartości w zależności od długości opisu
-      const baseWeight = 100 + (description.length % 5) * 50; // 100-300g
-      
-      ingredients.push({
-        name: 'składnik nieznany',
-        weight: baseWeight,
-        nutritionalValues: {
-          calories: Math.round(baseWeight * 2), // ~2 kcal/g
-          protein: parseFloat((baseWeight * 0.1).toFixed(1)), // ~10% białka
-          carbs: parseFloat((baseWeight * 0.3).toFixed(1)), // ~30% węglowodanów
-          fat: parseFloat((baseWeight * 0.05).toFixed(1)) // ~5% tłuszczu
-        }
-      });
-    }
-    
-    return ingredients;
-  }
-
-  // Obliczenie całkowitych wartości odżywczych na podstawie składników
-  _calculateNutritionalValues(ingredients) {
-    const total = {
-      calories: 0,
-      protein: 0,
-      carbs: 0,
-      fat: 0
-    };
-    
-    ingredients.forEach(ingredient => {
-      total.calories += ingredient.nutritionalValues.calories;
-      total.protein += ingredient.nutritionalValues.protein;
-      total.carbs += ingredient.nutritionalValues.carbs;
-      total.fat += ingredient.nutritionalValues.fat;
-    });
-    
-    // Zaokrąglenie wartości
-    total.calories = Math.round(total.calories);
-    total.protein = parseFloat(total.protein.toFixed(1));
-    total.carbs = parseFloat(total.carbs.toFixed(1));
-    total.fat = parseFloat(total.fat.toFixed(1));
-    
-    return total;
-  }
-
-  // Porównanie wartości podanych przez użytkownika z obliczonymi
-  _compareUserValues(calculated, userProvided) {
-    const result = {
-      calories: { diff: 0, percent: 0 },
-      protein: { diff: 0, percent: 0 },
-      carbs: { diff: 0, percent: 0 },
-      fat: { diff: 0, percent: 0 }
-    };
-    
-    // Jeśli użytkownik podał wartości, porównaj je
-    if (userProvided.calories) {
-      result.calories.diff = calculated.calories - userProvided.calories;
-      result.calories.percent = userProvided.calories ? (result.calories.diff / userProvided.calories) * 100 : 0;
-    }
-    
-    if (userProvided.protein) {
-      result.protein.diff = calculated.protein - userProvided.protein;
-      result.protein.percent = userProvided.protein ? (result.protein.diff / userProvided.protein) * 100 : 0;
-    }
-    
-    if (userProvided.carbs) {
-      result.carbs.diff = calculated.carbs - userProvided.carbs;
-      result.carbs.percent = userProvided.carbs ? (result.carbs.diff / userProvided.carbs) * 100 : 0;
-    }
-    
-    if (userProvided.fat) {
-      result.fat.diff = calculated.fat - userProvided.fat;
-      result.fat.percent = userProvided.fat ? (result.fat.diff / userProvided.fat) * 100 : 0;
-    }
-    
-    // Zaokrąglenie procentów
-    Object.keys(result).forEach(key => {
-      result[key].percent = parseFloat(result[key].percent.toFixed(1));
-    });
-    
-    return result;
-  }
-
-  // Wykrywanie potencjalnych alergenów
-  _detectAllergens(ingredients) {
-    const allergens = new Set();
-    
-    ingredients.forEach(ingredient => {
-      const dbIngredient = this.ingredientsDatabase[ingredient.name];
-      if (dbIngredient && dbIngredient.allergens) {
-        dbIngredient.allergens.forEach(allergen => allergens.add(allergen));
-      }
-    });
-    
-    return Array.from(allergens);
-  }
-
-  // Generowanie sugestii dotyczących posiłku
-  _generateSuggestions(nutritionalValues, mealData, ingredients) {
-    const suggestions = [];
-    const mealType = mealData.meal_type;
-    
-    // Sugestie dotyczące kalorii
-    if (mealType === 'breakfast' && nutritionalValues.calories > 600) {
-      suggestions.push('Śniadanie zawiera dużo kalorii. Rozważ zmniejszenie porcji lub wybór lżejszych składników.');
-    } else if (mealType === 'dinner' && nutritionalValues.calories > 800) {
-      suggestions.push('Kolacja jest dość kaloryczna. Jedząc późno, rozważ lżejszy posiłek.');
-    }
-    
-    // Sugestie dotyczące makroskładników
-    if (nutritionalValues.protein < 15 && (mealType === 'lunch' || mealType === 'dinner')) {
-      suggestions.push('Ten posiłek zawiera mało białka. Rozważ dodanie kurczaka, ryby, jaj lub roślin strączkowych.');
-    }
-    
-    if (nutritionalValues.fat > 30 && nutritionalValues.calories > 400) {
-      suggestions.push('Posiłek zawiera dużo tłuszczu. Rozważ zmniejszenie ilości oleju, masła lub tłustych składników.');
-    }
-    
-    // Sugestie dotyczące składników
-    const hasVegetables = ingredients.some(i => 
-      ['brokuł', 'marchew', 'pomidor'].includes(i.name)
+    const promptTemplate = PromptTemplate.fromTemplate(
+      `Przeanalizuj ten posiłek: {name}. Opis: {description}. 
+      Oceń jego wartości odżywcze i podaj szacunkowe kalorie, białko, węglowodany i tłuszcz.`
     );
     
-    if (!hasVegetables && (mealType === 'lunch' || mealType === 'dinner')) {
-      suggestions.push('Dodaj więcej warzyw, aby zwiększyć wartość odżywczą posiłku.');
+    const promptInput = await promptTemplate.format({
+      name: data.name,
+      description: data.description || 'Brak opisu'
+    });
+    
+    const response = await model.invoke(promptInput);
+    
+    // Tutaj można przetworzyć odpowiedź AI do odpowiedniego formatu
+    */
+    
+    // Tymczasowo zwracamy mockowe dane odżywcze na podstawie nazwy posiłku
+    let calories = 0, protein = 0, carbs = 0, fat = 0;
+    
+    const name = data.name.toLowerCase();
+    if (name.includes('jajecznica') || name.includes('jajka')) {
+      calories = 350;
+      protein = 22;
+      carbs = 5;
+      fat = 28;
+    } else if (name.includes('kurczak') || name.includes('indyk')) {
+      calories = 520;
+      protein = 42;
+      carbs = 45;
+      fat = 12;
+    } else if (name.includes('sałatka')) {
+      calories = 320;
+      protein = 28;
+      carbs = 10;
+      fat = 18;
+    } else if (name.includes('koktajl') || name.includes('shake')) {
+      calories = 280;
+      protein = 25;
+      carbs = 25;
+      fat = 8;
+    } else {
+      calories = Math.floor(Math.random() * 500) + 100;
+      protein = parseFloat((Math.random() * 30 + 5).toFixed(1));
+      carbs = parseFloat((Math.random() * 50 + 10).toFixed(1));
+      fat = parseFloat((Math.random() * 20 + 3).toFixed(1));
     }
     
-    // Jeśli nie ma żadnych sugestii, dodaj ogólną pozytywną informację
-    if (suggestions.length === 0) {
-      suggestions.push('Posiłek wydaje się dobrze zbilansowany pod względem wartości odżywczych.');
-    }
-    
-    return suggestions;
-  }
-
-  // Obliczenie ogólnej oceny zdrowotnej posiłku (1-10)
-  _calculateHealthScore(nutritionalValues, mealType) {
-    let score = 7; // Początkowa ocena
-    
-    // Ocena zależna od proporcji makroskładników
-    const totalCals = nutritionalValues.calories || 1; // Unikaj dzielenia przez zero
-    const proteinCals = nutritionalValues.protein * 4;
-    const carbsCals = nutritionalValues.carbs * 4;
-    const fatCals = nutritionalValues.fat * 9;
-    
-    const proteinPercent = (proteinCals / totalCals) * 100;
-    const carbsPercent = (carbsCals / totalCals) * 100;
-    const fatPercent = (fatCals / totalCals) * 100;
-    
-    // Idealne proporcje: ~30% białka, ~45% węglowodanów, ~25% tłuszczu
-    // Odejmij punkty za duże odchylenia
-    score -= Math.abs(proteinPercent - 30) > 15 ? 1 : 0;
-    score -= Math.abs(carbsPercent - 45) > 20 ? 1 : 0;
-    score -= Math.abs(fatPercent - 25) > 15 ? 1 : 0;
-    
-    // Ocena zależna od kalorii i typu posiłku
-    if (mealType === 'breakfast') {
-      // Śniadanie powinno mieć ~20-25% dziennego zapotrzebowania (~400-600 kcal)
-      score -= nutritionalValues.calories < 300 ? 1 : 0;
-      score -= nutritionalValues.calories > 700 ? 1 : 0;
-    } else if (mealType === 'lunch') {
-      // Obiad powinien mieć ~30-35% dziennego zapotrzebowania (~600-800 kcal)
-      score -= nutritionalValues.calories < 400 ? 1 : 0;
-      score -= nutritionalValues.calories > 900 ? 1 : 0;
-    } else if (mealType === 'dinner') {
-      // Kolacja powinna mieć ~20-25% dziennego zapotrzebowania (~400-600 kcal)
-      score -= nutritionalValues.calories < 300 ? 1 : 0;
-      score -= nutritionalValues.calories > 700 ? 2 : 0; // Większa kara za zbyt kaloryczną kolację
-    } else if (mealType === 'snack') {
-      // Przekąska powinna mieć ~10-15% dziennego zapotrzebowania (~200-300 kcal)
-      score -= nutritionalValues.calories < 100 ? 1 : 0;
-      score -= nutritionalValues.calories > 400 ? 1 : 0;
-    }
-    
-    // Ograniczenie wyniku do zakresu 1-10
-    return Math.max(1, Math.min(10, score));
+    return {
+      estimated_values: {
+        calories: calories,
+        protein: protein,
+        carbs: carbs,
+        fat: fat
+      },
+      health_analysis: `${data.name} to ${protein > 30 ? 'wysokobiałkowy' : protein > 15 ? 'średniobiałkowy' : 'niskobiałkowy'} posiłek z ${carbs > 30 ? 'dużą' : carbs > 15 ? 'umiarkowaną' : 'niską'} zawartością węglowodanów.`,
+      suggestions: [
+        protein < 20 ? "Rozważ dodanie więcej białka do tego posiłku" : "Zawartość białka jest odpowiednia",
+        fat > 30 ? "Ten posiłek ma dość wysoką zawartość tłuszczu" : "Zawartość tłuszczu jest w normie",
+        carbs < 20 ? "Możesz rozważyć dodanie więcej węglowodanów złożonych" : "Zawartość węglowodanów jest odpowiednia"
+      ]
+    };
+  } catch (error) {
+    console.error('Błąd podczas analizy AI:', error);
+    throw new Error('Nie udało się przeprowadzić analizy AI');
   }
 }
 
-module.exports = new AIService();
+/**
+ * Funkcja do generowania personalizowanych rekomendacji dietetycznych
+ * @param {Object} userData - Dane użytkownika
+ * @param {Array} mealHistory - Historia posiłków
+ * @returns {Promise<Object>} - Rekomendacje AI
+ */
+async function getDietRecommendations(userData, mealHistory) {
+  if (process.env.AI_ENABLED !== 'true') {
+    return {
+      recommendations: [
+        "Funkcja AI nie jest aktywna. Włącz AI_ENABLED w zmiennych środowiskowych."
+      ]
+    };
+  }
+
+  try {
+    // Tutaj integracja z modelem językowym do generowania rekomendacji
+    // Na podstawie danych użytkownika i historii posiłków
+    
+    // Analiza historii posiłków
+    let totalCalories = 0;
+    let totalProtein = 0;
+    let totalCarbs = 0;
+    let totalFat = 0;
+    const mealTypes = { breakfast: 0, lunch: 0, dinner: 0, snack: 0 };
+    
+    mealHistory.forEach(meal => {
+      totalCalories += meal.calories || 0;
+      totalProtein += meal.protein || 0;
+      totalCarbs += meal.carbs || 0;
+      totalFat += meal.fat || 0;
+      mealTypes[meal.meal_type] = (mealTypes[meal.meal_type] || 0) + 1;
+    });
+    
+    const avgCalories = mealHistory.length > 0 ? totalCalories / mealHistory.length : 0;
+    const avgProtein = mealHistory.length > 0 ? totalProtein / mealHistory.length : 0;
+    
+    // Generowanie rekomendacji na podstawie analizy
+    const recommendations = [];
+    const mealSuggestions = [];
+    
+    if (mealHistory.length === 0) {
+      recommendations.push("Brak historii posiłków. Zacznij dodawać posiłki, aby otrzymać spersonalizowane rekomendacje.");
+    } else {
+      // Rekomendacje oparte na wartościach odżywczych
+      if (avgProtein < 20) {
+        recommendations.push("Zwiększ spożycie białka w swojej diecie");
+        mealSuggestions.push("Grillowana pierś z kurczaka z warzywami", "Omlet z 3 jajkami i warzywami");
+      }
+      
+      if (userData.weight && userData.weight_goal && userData.weight > userData.weight_goal) {
+        recommendations.push("Twój cel to utrata wagi. Ogranicz kalorie do około 1800-2000 dziennie.");
+      } else if (userData.weight && userData.weight_goal && userData.weight < userData.weight_goal) {
+        recommendations.push("Twój cel to przybranie na wadze. Zwiększ kalorie do około 2500-3000 dziennie.");
+      }
+      
+      // Rekomendacje dotyczące regularności posiłków
+      if (mealTypes.breakfast < mealHistory.length / 4) {
+        recommendations.push("Staraj się jeść regularne śniadania - to ważny posiłek na początek dnia");
+        mealSuggestions.push("Owsianka z owocami i orzechami", "Kanapki pełnoziarniste z jajkiem i warzywami");
+      }
+    }
+    
+    // Dodanie ogólnych rekomendacji
+    if (recommendations.length === 0) {
+      recommendations.push(
+        "Twoja dieta wydaje się zrównoważona. Kontynuuj dobre nawyki żywieniowe!",
+        "Pamiętaj o piciu wystarczającej ilości wody każdego dnia"
+      );
+    }
+    
+    // Dodanie ogólnych propozycji posiłków
+    if (mealSuggestions.length === 0) {
+      mealSuggestions.push(
+        "Sałatka z łososiem i awokado",
+        "Pieczona pierś z kurczaka z warzywami",
+        "Koktajl proteinowy z bananem i masłem orzechowym"
+      );
+    }
+    
+    return {
+      recommendations: recommendations,
+      meal_suggestions: mealSuggestions
+    };
+  } catch (error) {
+    console.error('Błąd podczas generowania rekomendacji:', error);
+    throw new Error('Nie udało się wygenerować rekomendacji dietetycznych');
+  }
+}
+
+/**
+ * Funkcja do pobierania promptów dla modelu AI
+ * @param {String} name - Nazwa promptu
+ * @returns {Promise<String>} - Tekst promptu
+ */
+async function getPrompt(name) {
+  try {
+    const row = await queryOne('SELECT prompt_text FROM ai_prompts WHERE name = ?', [name]);
+    
+    if (!row) {
+      throw new Error('Prompt nie znaleziony');
+    }
+    
+    return row.prompt_text;
+  } catch (error) {
+    throw new Error(`Błąd podczas pobierania promptu: ${error.message}`);
+  }
+}
+
+/**
+ * Funkcja wypełniająca prompt danymi
+ * @param {String} promptTemplate - Szablon promptu
+ * @param {Object} variables - Zmienne do podstawienia
+ * @returns {String} - Wypełniony prompt
+ */
+function fillPromptTemplate(promptTemplate, variables = {}) {
+  let filledPrompt = promptTemplate;
+  
+  Object.keys(variables).forEach(key => {
+    const placeholder = new RegExp(`{${key}}`, 'g');
+    filledPrompt = filledPrompt.replace(placeholder, variables[key] || '');
+  });
+  
+  return filledPrompt;
+}
+
+module.exports = {
+  getAiAnalysis,
+  getDietRecommendations,
+  getPrompt,
+  fillPromptTemplate
+};

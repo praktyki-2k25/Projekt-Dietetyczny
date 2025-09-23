@@ -25,4 +25,67 @@ const closeDatabase = () => {
   });
 };
 
-module.exports = { db, closeDatabase };
+/**
+ * Funkcja do wykonywania zapytań SELECT (wiele wierszy)
+ * @param {string} sql - Zapytanie SQL
+ * @param {Array} params - Parametry zapytania
+ * @returns {Promise<Array>} - Lista wyników
+ */
+const query = (sql, params = []) => {
+  return new Promise((resolve, reject) => {
+    db.all(sql, params, (err, rows) => {
+      if (err) {
+        console.error('Błąd zapytania SQL:', err.message);
+        reject(err);
+      } else {
+        resolve(rows);
+      }
+    });
+  });
+};
+
+/**
+ * Funkcja do wykonywania zapytań SELECT (jeden wiersz)
+ * @param {string} sql - Zapytanie SQL
+ * @param {Array} params - Parametry zapytania
+ * @returns {Promise<Object>} - Pojedynczy wynik
+ */
+const queryOne = (sql, params = []) => {
+  return new Promise((resolve, reject) => {
+    db.get(sql, params, (err, row) => {
+      if (err) {
+        console.error('Błąd zapytania SQL:', err.message);
+        reject(err);
+      } else {
+        resolve(row);
+      }
+    });
+  });
+};
+
+/**
+ * Funkcja do wykonywania zapytań modyfikujących dane
+ * @param {string} sql - Zapytanie SQL
+ * @param {Array} params - Parametry zapytania
+ * @returns {Promise<Object>} - Wynik operacji
+ */
+const run = (sql, params = []) => {
+  return new Promise((resolve, reject) => {
+    db.run(sql, params, function(err) {
+      if (err) {
+        console.error('Błąd zapytania SQL:', err.message);
+        reject(err);
+      } else {
+        resolve({ id: this.lastID, changes: this.changes });
+      }
+    });
+  });
+};
+
+module.exports = { 
+  db, 
+  closeDatabase,
+  query,
+  queryOne,
+  run
+};
