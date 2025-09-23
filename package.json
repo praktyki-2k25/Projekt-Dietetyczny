@@ -7,7 +7,12 @@
     "start": "node server.js",
     "dev": "nodemon server.js",
     "init-db": "node src/database/init.js",
-    "test-ai": "node test-ai.js"
+    "test-ai": "node test-ai.js",
+    "frontend": "cd frontend && npm run dev",
+    "frontend:build": "cd frontend && npm run build",
+    "frontend:install": "cd frontend && npm install",
+    "start-all": "concurrently \"npm run dev\" \"npm run frontend\"",
+    "setup": "npm install && npm run frontend:install && npm run init-db"
   },
   "dependencies": {
     "axios": "^1.6.0",
@@ -19,7 +24,8 @@
     "sqlite3": "^5.1.6"
   },
   "devDependencies": {
-    "nodemon": "^3.0.1"
+    "nodemon": "^3.0.1",
+    "concurrently": "^8.2.0"
   },
   "optionalDependencies": {
     "@langchain/openai": "^0.0.1",
