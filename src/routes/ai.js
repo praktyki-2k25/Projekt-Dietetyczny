@@ -1,14 +1,87 @@
 const express = require('express');
+const multer = require('multer');
 const router = express.Router();
+const path = require('path');
+const fs = require('fs');
 const { query, queryOne, run } = require('../database/connection');
 const { authenticateToken } = require('../middleware/auth');
 const { 
   getAiAnalysis, 
   getDietRecommendations, 
   getPrompt,
-  fillPromptTemplate
+  fillPromptTemplate,
+  analyzeImage,
+  getImageDescription
 } = require('../services/ai-service');
 const Meal = require('../models/Meal');
+
+/**
+ * Sprawdza czy AI jest włączone
+ */
+const checkAiEnabled = () => {
+  if (process.env.AI_ENABLED !== 'true') {
+    return {
+      enabled: false,
+      error: 'Usługa AI nie jest włączona',
+      message: 'Ustaw AI_ENABLED=true w zmiennych środowiskowych'
+    };
+  }
+  return { enabled: true };
+};
+
+/**
+ * Obsługa błędów AI
+ */
+const handleAiError = (error, res) => {
+  console.error('Błąd AI:', error);
+  
+  return res.status(500).json({ 
+    error: 'Nie udało się przetworzyć żądania przez AI', 
+    message: error.message,
+    details: 'Upewnij się, że serwis AI jest uruchomiony i działa poprawnie'
+  });
+};
+
+/**
+ * Ogólna obsługa błędów
+ */
+const handleError = (error, res, message = 'Wystąpił błąd serwera') => {
+  console.error(message, error);
+  return res.status(500).json({ error: message, details: error.message });
+};
+
+// Konfiguracja przechowywania zdjęć
+const storage = multer.diskStorage({
+  destination: function(req, file, cb) {
+    const uploadDir = path.join(__dirname, '../../uploads/meals');
+    // Upewnij się, że folder istnieje
+    if (!fs.existsSync(uploadDir)){
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: function(req, file, cb) {
+    // Generowanie unikalnej nazwy pliku
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+// Filtrowanie typów plików
+const fileFilter = (req, file, cb) => {
+  if (file.mimetype === 'image/jpeg' || file.mimetype === 'image/png' || file.mimetype === 'image/jpg') {
+    cb(null, true);
+  } else {
+    cb(new Error('Nieprawidłowy format pliku. Akceptowane formaty to: jpeg, jpg, png.'), false);
+  }
+};
+
+// Inicjalizacja multer
+const upload = multer({ 
+  storage: storage,
+  fileFilter: fileFilter,
+  limits: { fileSize: 5 * 1024 * 1024 } // 5MB
+});
 
 /**
  * Endpoint do analizy posiłku przez AI bez zapisywania
@@ -21,17 +94,252 @@ router.post('/analyze-meal', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Nazwa posiłku jest wymagana' });
     }
     
-    if (process.env.AI_ENABLED !== 'true') {
+    // Sprawdź, czy AI jest włączone
+    const aiStatus = checkAiEnabled();
+    if (!aiStatus.enabled) {
       return res.status(400).json({ 
-        error: 'Usługa AI nie jest włączona', 
-        message: 'Ustaw AI_ENABLED=true w zmiennych środowiskowych'
+        error: aiStatus.error, 
+        message: aiStatus.message 
       });
     }
     
     const analysis = await getAiAnalysis({ name, description });
     res.json({ analysis });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return handleError(error, res, 'Błąd przetwarzania żądania analizy posiłku');
+  }
+});
+
+/**
+ * Endpoint do uzyskania prostego opisu zdjęcia posiłku (bez wartości odżywczych)
+ */
+router.post('/describe-image', authenticateToken, upload.fields([{ name: 'image', maxCount: 1 }, { name: 'meal_image', maxCount: 1 }, { name: 'file', maxCount: 1 }, { name: 'photo', maxCount: 1 }]), async (req, res) => {
+  try {
+    // Znajdź i zwaliduj przesłany plik
+    const file = getUploadedFile(req);
+    const validation = validateFile(file);
+    
+    if (!validation.valid) {
+      return res.status(400).json({ 
+        error: validation.error, 
+        message: validation.message 
+      });
+    }
+    
+    // Sprawdź, czy AI jest włączone
+    const aiStatus = checkAiEnabled();
+    if (!aiStatus.enabled) {
+      return res.status(400).json({ 
+        error: aiStatus.error, 
+        message: aiStatus.message 
+      });
+    }
+    
+    // Ścieżka do zapisanego zdjęcia
+    const imagePath = file.path;
+    
+    try {
+      // Analiza zdjęcia przez AI - prosty opis
+      const description = await getImageDescription(imagePath);
+      
+      // Zwróć wynik analizy
+      res.json({ 
+        description,
+        image_url: `/uploads/meals/${path.basename(imagePath)}`
+      });
+    } catch (aiError) {
+      return handleAiError(aiError, res);
+    }
+  } catch (error) {
+    return handleError(error, res, 'Błąd przetwarzania zdjęcia');
+  }
+});
+
+/**
+ * Znajduje przesłany plik z formularza
+ */
+const getUploadedFile = (req) => {
+  if (!req.files) return null;
+  
+  const fieldNames = ['image', 'meal_image', 'file', 'photo'];
+  
+  for (const fieldName of fieldNames) {
+    if (req.files[fieldName] && req.files[fieldName].length > 0) {
+      return req.files[fieldName][0];
+    }
+  }
+  
+  return null;
+};
+
+/**
+ * Sprawdza plik pod kątem poprawności
+ */
+const validateFile = (file) => {
+  if (!file) {
+    return { valid: false, error: 'Brak zdjęcia posiłku' };
+  }
+  
+  // Sprawdź typ pliku (MIME)
+  const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png'];
+  if (!allowedTypes.includes(file.mimetype)) {
+    console.error(`Nieprawidłowy typ pliku: ${file.mimetype}`);
+    return {
+      valid: false,
+      error: 'Nieprawidłowy format pliku',
+      message: 'Dozwolone formaty to: JPEG, JPG, PNG'
+    };
+  }
+  
+  // Sprawdź rozmiar pliku (maks. 5MB)
+  const maxSize = 5 * 1024 * 1024; // 5MB
+  if (file.size > maxSize) {
+    console.error(`Zbyt duży plik: ${file.size} bajtów`);
+    return {
+      valid: false, 
+      error: 'Plik jest zbyt duży',
+      message: 'Maksymalny rozmiar pliku to 5MB'
+    };
+  }
+  
+  return { valid: true };
+};
+router.post('/analyze-meal-photo', authenticateToken, upload.fields([{ name: 'image', maxCount: 1 }, { name: 'meal_image', maxCount: 1 }, { name: 'file', maxCount: 1 }, { name: 'photo', maxCount: 1 }]), async (req, res) => {
+  try {
+    // Znajdź i zwaliduj przesłany plik
+    const file = getUploadedFile(req);
+    const validation = validateFile(file);
+    
+    if (!validation.valid) {
+      return res.status(400).json({ 
+        error: validation.error,
+        message: validation.message 
+      });
+    }
+    
+    // Sprawdź, czy AI jest włączone
+    const aiStatus = checkAiEnabled();
+    if (!aiStatus.enabled) {
+      return res.status(400).json({ 
+        error: aiStatus.error, 
+        message: aiStatus.message 
+      });
+    }
+    
+    // Ścieżka do zapisanego zdjęcia
+    const imagePath = file.path;
+    console.log('Analizowanie zdjęcia z:', imagePath);
+    console.log('Rozmiar pliku:', file.size, 'bajtów');
+    console.log('Typ MIME:', file.mimetype);
+    
+    try {
+      // Analiza zdjęcia przez AI
+      const analysis = await analyzeImage(imagePath);
+      
+      // Zwróć wynik analizy
+      res.json({ 
+        analysis,
+        image_url: `/uploads/meals/${path.basename(imagePath)}`
+      });
+    } catch (aiError) {
+      return handleAiError(aiError, res);
+    }
+  } catch (error) {
+    return handleError(error, res, 'Błąd przetwarzania zdjęcia');
+  }
+});
+
+/**
+ * Endpoint do zapisywania posiłku ze zdjęcia
+ */
+router.post('/save-meal-from-photo', authenticateToken, upload.fields([{ name: 'image', maxCount: 1 }, { name: 'meal_image', maxCount: 1 }, { name: 'file', maxCount: 1 }, { name: 'photo', maxCount: 1 }]), async (req, res) => {
+  try {
+    // Znajdź i zwaliduj przesłany plik
+    const file = getUploadedFile(req);
+    const validation = validateFile(file);
+    
+    if (!validation.valid) {
+      return res.status(400).json({ 
+        error: validation.error, 
+        message: validation.message 
+      });
+    }
+    
+    // Sprawdź, czy AI jest włączone
+    const aiStatus = checkAiEnabled();
+    if (!aiStatus.enabled) {
+      return res.status(400).json({ 
+        error: aiStatus.error, 
+        message: aiStatus.message 
+      });
+    }
+    
+    // Ścieżka do zapisanego zdjęcia
+    const imagePath = file.path;
+    
+    try {
+      // Analiza zdjęcia przez AI
+      const analysis = await analyzeImage(imagePath);
+      
+      // Przygotowanie danych posiłku na podstawie analizy
+      const today = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
+      const mealData = {
+        user_id: req.user.id,
+        name: analysis.meal_name || 'Posiłek ze zdjęcia',
+        description: analysis.ingredients ? `Składniki: ${analysis.ingredients.join(', ')}` : '',
+        calories: analysis.estimated_values.calories || null,
+        protein: analysis.estimated_values.protein || null,
+        carbs: analysis.estimated_values.carbs || null,
+        fat: analysis.estimated_values.fat || null,
+        meal_date: req.body.meal_date || today,
+        meal_type: req.body.meal_type || null,
+        ai_analysis: JSON.stringify(analysis),
+        image_path: imagePath
+      };
+      
+      // Zapisz posiłek w bazie danych
+      const result = await run(`
+        INSERT INTO meals (
+          user_id, name, description, calories, protein, 
+          carbs, fat, meal_date, meal_type, ai_analysis, image_path
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        mealData.user_id,
+        mealData.name,
+        mealData.description,
+        mealData.calories,
+        mealData.protein,
+        mealData.carbs,
+        mealData.fat,
+        mealData.meal_date,
+        mealData.meal_type,
+        mealData.ai_analysis,
+        mealData.image_path
+      ]);
+      
+      // Pobierz zapisany posiłek
+      const savedMeal = await queryOne('SELECT * FROM meals WHERE id = ?', [result.id]);
+      
+      // Przetworzenie analizy AI z JSON string do obiektu
+      if (savedMeal.ai_analysis) {
+        try {
+          savedMeal.ai_analysis = JSON.parse(savedMeal.ai_analysis);
+        } catch (e) {
+          // Jeśli nie można sparsować, zostawiamy jako string
+        }
+      }
+      
+      // Zwróć zapisany posiłek
+      res.status(201).json({
+        meal: savedMeal,
+        message: 'Posiłek został zapisany na podstawie analizy zdjęcia'
+      });
+    } catch (aiError) {
+      return handleAiError(aiError, res);
+    }
+  } catch (error) {
+    return handleError(error, res, 'Błąd przetwarzania zdjęcia');
   }
 });
 
@@ -40,10 +348,12 @@ router.post('/analyze-meal', authenticateToken, async (req, res) => {
  */
 router.get('/diet-recommendations', authenticateToken, async (req, res) => {
   try {
-    if (process.env.AI_ENABLED !== 'true') {
+    // Sprawdź, czy AI jest włączone
+    const aiStatus = checkAiEnabled();
+    if (!aiStatus.enabled) {
       return res.status(400).json({ 
-        error: 'Usługa AI nie jest włączona', 
-        message: 'Ustaw AI_ENABLED=true w zmiennych środowiskowych'
+        error: aiStatus.error, 
+        message: aiStatus.message 
       });
     }
     
@@ -61,7 +371,7 @@ router.get('/diet-recommendations', authenticateToken, async (req, res) => {
     const recommendations = await getDietRecommendations(userData, meals);
     res.json(recommendations);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return handleError(error, res, 'Błąd generowania rekomendacji dietetycznych');
   }
 });
 
@@ -73,7 +383,7 @@ router.get('/prompts', authenticateToken, async (req, res) => {
     const prompts = await query('SELECT id, name, description FROM ai_prompts');
     res.json(prompts);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return handleError(error, res, 'Błąd pobierania promptów');
   }
 });
 
@@ -85,7 +395,10 @@ router.get('/prompts/:name', authenticateToken, async (req, res) => {
     const promptText = await getPrompt(req.params.name);
     res.json({ name: req.params.name, prompt_text: promptText });
   } catch (error) {
-    res.status(404).json({ error: error.message });
+    if (error.message.includes('nie znaleziony')) {
+      return res.status(404).json({ error: error.message });
+    }
+    return handleError(error, res, 'Błąd pobierania promptu');
   }
 });
 
@@ -120,7 +433,7 @@ router.post('/prompts', authenticateToken, async (req, res) => {
       message: 'Prompt został dodany'
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return handleError(error, res, 'Błąd dodawania promptu');
   }
 });
 
@@ -152,7 +465,7 @@ router.put('/prompts/:id', authenticateToken, async (req, res) => {
       message: 'Prompt został zaktualizowany'
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return handleError(error, res, 'Błąd aktualizacji promptu');
   }
 });
 
@@ -167,10 +480,12 @@ router.post('/test-prompt', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Nazwa promptu jest wymagana' });
     }
     
-    if (process.env.AI_ENABLED !== 'true') {
+    // Sprawdź, czy AI jest włączone
+    const aiStatus = checkAiEnabled();
+    if (!aiStatus.enabled) {
       return res.status(400).json({ 
-        error: 'Usługa AI nie jest włączona',
-        message: 'Ustaw AI_ENABLED=true w zmiennych środowiskowych'
+        error: aiStatus.error, 
+        message: aiStatus.message 
       });
     }
     
@@ -191,7 +506,7 @@ router.post('/test-prompt', authenticateToken, async (req, res) => {
     if (error.message.includes('nie znaleziony')) {
       return res.status(404).json({ error: error.message });
     }
-    res.status(500).json({ error: error.message });
+    return handleError(error, res, 'Błąd testowania promptu');
   }
 });
 
@@ -210,7 +525,171 @@ router.delete('/prompts/:id', authenticateToken, async (req, res) => {
     
     res.json({ message: 'Prompt został usunięty' });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return handleError(error, res, 'Błąd usuwania promptu');
+  }
+});
+
+/**
+ * Endpoint do generowania inteligentnych przypomnień
+ */
+router.get('/smart-reminders', authenticateToken, async (req, res) => {
+  try {
+    // Sprawdź, czy AI jest włączone
+    const aiStatus = checkAiEnabled();
+    if (!aiStatus.enabled) {
+      return res.status(400).json({ 
+        error: aiStatus.error, 
+        message: aiStatus.message 
+      });
+    }
+    
+    // Pobieramy dane użytkownika
+    const userData = await queryOne('SELECT * FROM users WHERE id = ?', [req.user.id]);
+    
+    if (!userData) {
+      return res.status(404).json({ error: 'Nie znaleziono użytkownika' });
+    }
+    
+    // Pobieramy posiłki z ostatnich 3 dni
+    const recentMeals = await query(
+      'SELECT * FROM meals WHERE user_id = ? AND meal_date >= date("now", "-3 days") ORDER BY meal_date DESC', 
+      [req.user.id]
+    );
+    
+    // Generujemy przypomnienia na podstawie historii posiłków
+    // (to byłoby zintegrowane z serwisem AI, teraz zwracamy mockowe dane)
+    const reminders = [
+      {
+        type: 'protein',
+        message: 'Twoje spożycie białka jest niskie od 2 dni. Rozważ dodanie więcej mięsa, ryb lub roślinnych źródeł białka.',
+        priority: 'high'
+      },
+      {
+        type: 'water',
+        message: 'Pamiętaj o regularnym piciu wody - minimum 2 litry dziennie!',
+        priority: 'medium'
+      },
+      {
+        type: 'vegetables',
+        message: 'Dodaj więcej warzyw do swojej diety dla lepszego bilansu mikroelementów.',
+        priority: 'medium'
+      }
+    ];
+    
+    // Tutaj można by wywołać model AI dla bardziej spersonalizowanych przypomnień
+    
+    res.json({ reminders });
+  } catch (error) {
+    return handleError(error, res, 'Błąd generowania przypomnień');
+  }
+});
+
+/**
+ * Endpoint do generowania sugestii alternatywnych produktów
+ */
+router.post('/alternative-products', authenticateToken, async (req, res) => {
+  try {
+    const { product_name, meal_context } = req.body;
+    
+    if (!product_name) {
+      return res.status(400).json({ error: 'Nazwa produktu jest wymagana' });
+    }
+    
+    // Sprawdź, czy AI jest włączone
+    const aiStatus = checkAiEnabled();
+    if (!aiStatus.enabled) {
+      return res.status(400).json({ 
+        error: aiStatus.error, 
+        message: aiStatus.message 
+      });
+    }
+    
+    // Tutaj można by wywołać model AI dla generowania alternatyw
+    // Obecnie zwracamy mockowe dane
+    
+    let alternatives = [];
+    const productLower = product_name.toLowerCase();
+    
+    if (productLower.includes('mięso') || productLower.includes('kurczak')) {
+      alternatives = [
+        {
+          name: 'Tofu',
+          benefits: 'Roślinne źródło białka, niższa zawartość tłuszczu',
+          calories_diff: -30
+        },
+        {
+          name: 'Tempeh',
+          benefits: 'Fermentowane białko roślinne, dobre źródło probiotyków',
+          calories_diff: -20
+        },
+        {
+          name: 'Seitan',
+          benefits: 'Wysokobiałkowy produkt z glutenu pszennego',
+          calories_diff: -15
+        }
+      ];
+    } else if (productLower.includes('ser') || productLower.includes('nabiał')) {
+      alternatives = [
+        {
+          name: 'Ser z orzechów nerkowca',
+          benefits: 'Bez laktozy, zdrowe tłuszcze',
+          calories_diff: -10
+        },
+        {
+          name: 'Wegański ser sojowy',
+          benefits: 'Niższa zawartość tłuszczu nasyconego',
+          calories_diff: -50
+        },
+        {
+          name: 'Hummus',
+          benefits: 'Źródło białka i błonnika, zdrowe tłuszcze',
+          calories_diff: -20
+        }
+      ];
+    } else if (productLower.includes('cukier') || productLower.includes('słodki')) {
+      alternatives = [
+        {
+          name: 'Ksylitol',
+          benefits: 'Naturalny słodzik o niskim indeksie glikemicznym',
+          calories_diff: -40
+        },
+        {
+          name: 'Syrop z daktyli',
+          benefits: 'Naturalne źródło słodyczy z mikroelementami',
+          calories_diff: -15
+        },
+        {
+          name: 'Stevia',
+          benefits: 'Słodzik bez kalorii',
+          calories_diff: -100
+        }
+      ];
+    } else {
+      alternatives = [
+        {
+          name: 'Alternatywa 1',
+          benefits: 'Zdrowsza opcja z niższą zawartością kalorii',
+          calories_diff: -25
+        },
+        {
+          name: 'Alternatywa 2',
+          benefits: 'Więcej błonnika i mikroelementów',
+          calories_diff: -15
+        },
+        {
+          name: 'Alternatywa 3',
+          benefits: 'Lepsza opcja dla osób na diecie',
+          calories_diff: -30
+        }
+      ];
+    }
+    
+    res.json({ 
+      product: product_name,
+      alternatives: alternatives
+    });
+  } catch (error) {
+    return handleError(error, res, 'Błąd generowania alternatywnych produktów');
   }
 });
 

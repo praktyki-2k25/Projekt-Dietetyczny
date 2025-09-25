@@ -33,6 +33,7 @@ app.get('/', (req, res) => {
 // Trasy API
 app.use('/api/users', usersRoutes);
 app.use('/api/meals', mealsRoutes);
+app.use('/api/meals', require('./src/routes/meal-analysis'));
 app.use('/api/reports', reportsRoutes);
 app.use('/api/ai', aiRoutes); // Nowe trasy AI
 

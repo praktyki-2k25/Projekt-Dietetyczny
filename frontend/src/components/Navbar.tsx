@@ -8,13 +8,15 @@ import {
   User, 
   LogOut, 
   UtensilsCrossed,
-  Brain
+  Brain,
+  Camera
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: Home },
   { name: 'Dodaj posiłek', href: '/meals/add', icon: Plus },
+  { name: 'Dodaj ze zdjęcia', href: '/meals/photo-analysis', icon: Camera },
   { name: 'Moje posiłki', href: '/meals', icon: UtensilsCrossed },
   { name: 'Analiza AI', href: '/ai-analysis', icon: Brain },
   { name: 'Raporty', href: '/reports', icon: BarChart3 },

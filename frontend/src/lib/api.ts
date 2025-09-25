@@ -117,7 +117,9 @@ export const mealsApi = {
     ingredients: string;
     meal_type: string;
   }): Promise<AIAnalysis> => {
+    console.log('Wywołanie API analyzeMeal z danymi:', data);
     const response = await api.post('/meals/analyze', data);
+    console.log('Otrzymano odpowiedź z /meals/analyze:', response.data);
     return response.data;
   },
 
@@ -162,6 +164,54 @@ export const aiApi = {
 
   getDietRecommendations: async (): Promise<{ recommendations: string[] }> => {
     const response = await api.get('/ai/diet-recommendations');
+    return response.data;
+  },
+
+  analyzeMealPhoto: async (imageFile: File): Promise<{
+    analysis: AIAnalysis;
+    image_url: string;
+  }> => {
+    console.log('Wywołanie API analyzeMealPhoto z plikiem:', imageFile.name, imageFile.type, imageFile.size);
+    const formData = new FormData();
+    // Upewnij się, że nazwa parametru 'file' jest zgodna z konfiguracją w serwisie AI
+    formData.append('file', imageFile);
+    
+    const response = await api.post('/ai/analyze-meal-photo', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+      timeout: 30000, // Dłuższy timeout dla analizy obrazów
+    });
+    
+    console.log('Odpowiedź analyzeMealPhoto:', response.data);
+    return response.data;
+  },
+  
+  saveMealFromPhoto: async (imageFile: File, mealData?: {
+    meal_date?: string;
+    meal_type?: string;
+  }): Promise<{
+    meal: Meal;
+    message: string;
+  }> => {
+    const formData = new FormData();
+    formData.append('image', imageFile);
+    
+    if (mealData?.meal_date) {
+      formData.append('meal_date', mealData.meal_date);
+    }
+    
+    if (mealData?.meal_type) {
+      formData.append('meal_type', mealData.meal_type);
+    }
+    
+    const response = await api.post('/ai/save-meal-from-photo', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+      timeout: 30000, // Dłuższy timeout dla analizy obrazów
+    });
+    
     return response.data;
   },
 };

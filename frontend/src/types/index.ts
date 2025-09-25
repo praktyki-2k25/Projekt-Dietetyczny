@@ -73,7 +73,8 @@ export interface DailySummary {
 
 export interface AIAnalysis {
   meal_name: string;
-  original_values: {
+  ingredients?: string[];
+  original_values?: {
     calories: number;
     protein: number;
     carbs: number;
@@ -95,6 +96,7 @@ export interface AIAnalysis {
       fat: number;
     };
   }[];
+  health_analysis?: string;
   allergens?: string[];
   suggestions?: string[];
   health_score?: number;

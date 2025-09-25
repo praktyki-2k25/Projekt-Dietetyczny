@@ -1,0 +1,3 @@
+# Lista plików do zatrzymania
+start.bat
+# install_all.bat - możemy zachować do przyszłej instalacji

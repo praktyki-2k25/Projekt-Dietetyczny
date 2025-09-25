@@ -11,6 +11,7 @@ import { LoginPage } from '@/pages/LoginPage';
 import { RegisterPage } from '@/pages/RegisterPage';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { AddMealPage } from '@/pages/AddMealPage';
+import { MealPhotoAnalysisPage } from '@/pages/MealPhotoAnalysisPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -40,6 +41,7 @@ function App() {
                     <Route path="/" element={<DashboardPage />} />
                     <Route path="/meals" element={<div className="p-8">Meals page - coming soon</div>} />
                     <Route path="/meals/add" element={<AddMealPage />} />
+                    <Route path="/meals/photo-analysis" element={<MealPhotoAnalysisPage />} />
                     <Route path="/ai-analysis" element={<div className="p-8">AI analysis page - coming soon</div>} />
                     <Route path="/reports" element={<div className="p-8">Reports page - coming soon</div>} />
                     <Route path="/profile" element={<div className="p-8">Profile page - coming soon</div>} />

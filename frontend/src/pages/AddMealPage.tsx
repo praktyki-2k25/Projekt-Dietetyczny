@@ -53,17 +53,20 @@ export const AddMealPage: React.FC = () => {
 
     setIsAnalyzing(true);
     try {
-      const analysis = await mealsApi.analyzeMeal({
+      console.log('Wysyłanie do analizy:', { name: formData.name, ingredients, meal_type: formData.meal_type });
+      const response = await mealsApi.analyzeMeal({
         name: formData.name,
         ingredients: ingredients,
         meal_type: formData.meal_type
       });
-      setAiAnalysis(analysis);
+      
+      console.log('Otrzymano analizę:', response);
+      setAiAnalysis(response);
       setShowAnalysisModal(true);
-    } catch (error: any) {
+    } catch (error) {
+      console.error('Błąd analizy AI:', error);
       const message = error.response?.data?.message || 'Błąd podczas analizy AI';
       toast.error(message);
-      console.error('AI analysis failed:', error);
     } finally {
       setIsAnalyzing(false);
     }

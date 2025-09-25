@@ -1,92 +1,119 @@
 const { queryOne } = require('../database/connection');
+const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
+const FormData = require('form-data');
 require('dotenv').config();
 
+// Adres serwisu AI
+const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+
 /**
- * Punkt integracji z API modelu językowego (np. LangChain)
+ * Punkt integracji z API modelu językowego poprzez serwis AI
  * @param {Object} data - Dane posiłku do analizy
  * @returns {Promise<Object>} - Analiza AI
  */
 async function getAiAnalysis(data) {
   // Sprawdzamy czy AI jest włączone
   if (process.env.AI_ENABLED !== 'true') {
-    return null;
+    throw new Error('Funkcja analizy AI nie jest aktywna. Włącz AI_ENABLED w zmiennych środowiskowych.');
   }
   
   try {
-    // W tym miejscu można zintegrować LangChain lub inny model językowy
-    // Przykładowy kod dla integracji:
-    /*
-    const { ChatOpenAI } = require('@langchain/openai');
-    const { PromptTemplate } = require('langchain/prompts');
-    
-    const model = new ChatOpenAI({
-      modelName: "gpt-3.5-turbo",
-      temperature: 0.7,
-    });
-    
-    const promptTemplate = PromptTemplate.fromTemplate(
-      `Przeanalizuj ten posiłek: {name}. Opis: {description}. 
-      Oceń jego wartości odżywcze i podaj szacunkowe kalorie, białko, węglowodany i tłuszcz.`
-    );
-    
-    const promptInput = await promptTemplate.format({
+    // Próbujemy połączyć się z serwisem AI
+    const response = await axios.post(`${AI_SERVICE_URL}/analyze-meal`, {
       name: data.name,
       description: data.description || 'Brak opisu'
+    }, {
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      timeout: 10000 // 10 sekund timeout
     });
     
-    const response = await model.invoke(promptInput);
-    
-    // Tutaj można przetworzyć odpowiedź AI do odpowiedniego formatu
-    */
-    
-    // Tymczasowo zwracamy mockowe dane odżywcze na podstawie nazwy posiłku
-    let calories = 0, protein = 0, carbs = 0, fat = 0;
-    
-    const name = data.name.toLowerCase();
-    if (name.includes('jajecznica') || name.includes('jajka')) {
-      calories = 350;
-      protein = 22;
-      carbs = 5;
-      fat = 28;
-    } else if (name.includes('kurczak') || name.includes('indyk')) {
-      calories = 520;
-      protein = 42;
-      carbs = 45;
-      fat = 12;
-    } else if (name.includes('sałatka')) {
-      calories = 320;
-      protein = 28;
-      carbs = 10;
-      fat = 18;
-    } else if (name.includes('koktajl') || name.includes('shake')) {
-      calories = 280;
-      protein = 25;
-      carbs = 25;
-      fat = 8;
+    if (response.status === 200 && response.data) {
+      console.log("Odpowiedź z AI:", JSON.stringify(response.data, null, 2));
+      return response.data;
     } else {
-      calories = Math.floor(Math.random() * 500) + 100;
-      protein = parseFloat((Math.random() * 30 + 5).toFixed(1));
-      carbs = parseFloat((Math.random() * 50 + 10).toFixed(1));
-      fat = parseFloat((Math.random() * 20 + 3).toFixed(1));
+      throw new Error('Nieprawidłowa odpowiedź z serwisu AI');
     }
-    
-    return {
-      estimated_values: {
-        calories: calories,
-        protein: protein,
-        carbs: carbs,
-        fat: fat
-      },
-      health_analysis: `${data.name} to ${protein > 30 ? 'wysokobiałkowy' : protein > 15 ? 'średniobiałkowy' : 'niskobiałkowy'} posiłek z ${carbs > 30 ? 'dużą' : carbs > 15 ? 'umiarkowaną' : 'niską'} zawartością węglowodanów.`,
-      suggestions: [
-        protein < 20 ? "Rozważ dodanie więcej białka do tego posiłku" : "Zawartość białka jest odpowiednia",
-        fat > 30 ? "Ten posiłek ma dość wysoką zawartość tłuszczu" : "Zawartość tłuszczu jest w normie",
-        carbs < 20 ? "Możesz rozważyć dodanie więcej węglowodanów złożonych" : "Zawartość węglowodanów jest odpowiednia"
-      ]
-    };
   } catch (error) {
-    console.error('Błąd podczas analizy AI:', error);
-    throw new Error('Nie udało się przeprowadzić analizy AI');
+    console.error('Błąd podczas analizy AI:', error.message);
+    if (error.response) {
+      console.error('Dane odpowiedzi:', error.response.data);
+      console.error('Status:', error.response.status);
+    }
+    // Przekaż błąd dalej
+    throw error;
+  }
+}
+
+/**
+ * Funkcja do analizy zdjęcia posiłku
+ * @param {String} imagePath - Ścieżka do pliku zdjęcia
+ * @returns {Promise<Object>} - Wynik analizy
+ */
+async function analyzeImage(imagePath) {
+  // Sprawdzamy czy AI jest włączone
+  if (process.env.AI_ENABLED !== 'true') {
+    throw new Error('Funkcja analizy AI nie jest aktywna. Włącz AI_ENABLED w zmiennych środowiskowych.');
+  }
+  
+  try {
+  // Przygotowanie formularza z plikiem
+  const formData = new FormData();
+  // Uwaga: plik musi być dodany jako 'file', a nie 'image'
+  formData.append('file', fs.createReadStream(imagePath));
+  
+  console.log('===================================');
+  console.log('Wysyłanie zdjęcia do analizy AI...');
+  console.log('URL:', `${AI_SERVICE_URL}/analyze-meal-photo`);
+  console.log('Plik:', imagePath);
+      console.log('Istnieje:', fs.existsSync(imagePath) ? 'Tak' : 'Nie');
+    
+    try {
+      // Wysyłanie żądania do serwisu AI
+      const response = await axios.post(`${AI_SERVICE_URL}/analyze-meal-photo`, formData, {
+        headers: {
+          ...formData.getHeaders()
+        },
+        timeout: 60000 // 60 sekund timeout - analiza obrazu może trwać dłużej
+      });
+      
+      console.log('Otrzymano odpowiedź z serwisu AI:', JSON.stringify(response.data, null, 2));
+      
+      // Sprawdź czy odpowiedź zawiera błąd
+      if (response.data.error) {
+        console.error('Błąd zwrócony przez AI:', response.data.error);
+        throw new Error(response.data.error + (response.data.details ? `: ${response.data.details}` : ''));
+      }
+      
+      // Sprawdź czy odpowiedź ma prawidłową strukturę
+      if (!response.data.meal_name || !response.data.estimated_values) {
+        console.error('Nieprawidłowa struktura odpowiedzi:', JSON.stringify(response.data, null, 2));
+        throw new Error('Otrzymano nieprawidłowy format odpowiedzi z serwisu AI');
+      }
+      
+      console.log('Pomyślnie przeanalizowano zdjęcie, zwracam wynik.');
+      console.log('===================================');
+      return response.data;
+    } catch (axiosError) {
+      // Sprawdź szczegóły błędu Axios
+      console.error('Błąd Axios podczas żądania:', axiosError.message);
+      if (axiosError.response) {
+        console.error('Status odpowiedzi:', axiosError.response.status);
+        console.error('Dane odpowiedzi:', JSON.stringify(axiosError.response.data, null, 2));
+      }
+      if (axiosError.request) {
+        console.error('Nie otrzymano odpowiedzi:', axiosError.request);
+      }
+      throw axiosError;
+    }
+  } catch (error) {
+    console.error('Błąd podczas analizy zdjęcia:', error.message);
+    console.log('===================================');
+    // Przekaż błąd dalej
+    throw error;
   }
 }
 
@@ -98,85 +125,29 @@ async function getAiAnalysis(data) {
  */
 async function getDietRecommendations(userData, mealHistory) {
   if (process.env.AI_ENABLED !== 'true') {
-    return {
-      recommendations: [
-        "Funkcja AI nie jest aktywna. Włącz AI_ENABLED w zmiennych środowiskowych."
-      ]
-    };
+    throw new Error('Funkcja analizy AI nie jest aktywna. Włącz AI_ENABLED w zmiennych środowiskowych.');
   }
 
   try {
-    // Tutaj integracja z modelem językowym do generowania rekomendacji
-    // Na podstawie danych użytkownika i historii posiłków
-    
-    // Analiza historii posiłków
-    let totalCalories = 0;
-    let totalProtein = 0;
-    let totalCarbs = 0;
-    let totalFat = 0;
-    const mealTypes = { breakfast: 0, lunch: 0, dinner: 0, snack: 0 };
-    
-    mealHistory.forEach(meal => {
-      totalCalories += meal.calories || 0;
-      totalProtein += meal.protein || 0;
-      totalCarbs += meal.carbs || 0;
-      totalFat += meal.fat || 0;
-      mealTypes[meal.meal_type] = (mealTypes[meal.meal_type] || 0) + 1;
+    // Próbujemy połączyć się z serwisem AI
+    const response = await axios.post(`${AI_SERVICE_URL}/recommendations`, {
+      user_data: userData,
+      meal_history: mealHistory
+    }, {
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      timeout: 15000 // 15 sekund timeout
     });
     
-    const avgCalories = mealHistory.length > 0 ? totalCalories / mealHistory.length : 0;
-    const avgProtein = mealHistory.length > 0 ? totalProtein / mealHistory.length : 0;
-    
-    // Generowanie rekomendacji na podstawie analizy
-    const recommendations = [];
-    const mealSuggestions = [];
-    
-    if (mealHistory.length === 0) {
-      recommendations.push("Brak historii posiłków. Zacznij dodawać posiłki, aby otrzymać spersonalizowane rekomendacje.");
+    if (response.status === 200 && response.data) {
+      return response.data;
     } else {
-      // Rekomendacje oparte na wartościach odżywczych
-      if (avgProtein < 20) {
-        recommendations.push("Zwiększ spożycie białka w swojej diecie");
-        mealSuggestions.push("Grillowana pierś z kurczaka z warzywami", "Omlet z 3 jajkami i warzywami");
-      }
-      
-      if (userData.weight && userData.weight_goal && userData.weight > userData.weight_goal) {
-        recommendations.push("Twój cel to utrata wagi. Ogranicz kalorie do około 1800-2000 dziennie.");
-      } else if (userData.weight && userData.weight_goal && userData.weight < userData.weight_goal) {
-        recommendations.push("Twój cel to przybranie na wadze. Zwiększ kalorie do około 2500-3000 dziennie.");
-      }
-      
-      // Rekomendacje dotyczące regularności posiłków
-      if (mealTypes.breakfast < mealHistory.length / 4) {
-        recommendations.push("Staraj się jeść regularne śniadania - to ważny posiłek na początek dnia");
-        mealSuggestions.push("Owsianka z owocami i orzechami", "Kanapki pełnoziarniste z jajkiem i warzywami");
-      }
+      throw new Error('Nieprawidłowa odpowiedź z serwisu AI dla rekomendacji');
     }
-    
-    // Dodanie ogólnych rekomendacji
-    if (recommendations.length === 0) {
-      recommendations.push(
-        "Twoja dieta wydaje się zrównoważona. Kontynuuj dobre nawyki żywieniowe!",
-        "Pamiętaj o piciu wystarczającej ilości wody każdego dnia"
-      );
-    }
-    
-    // Dodanie ogólnych propozycji posiłków
-    if (mealSuggestions.length === 0) {
-      mealSuggestions.push(
-        "Sałatka z łososiem i awokado",
-        "Pieczona pierś z kurczaka z warzywami",
-        "Koktajl proteinowy z bananem i masłem orzechowym"
-      );
-    }
-    
-    return {
-      recommendations: recommendations,
-      meal_suggestions: mealSuggestions
-    };
   } catch (error) {
-    console.error('Błąd podczas generowania rekomendacji:', error);
-    throw new Error('Nie udało się wygenerować rekomendacji dietetycznych');
+    console.error('Błąd podczas generowania rekomendacji:', error.message);
+    throw error;
   }
 }
 
@@ -216,8 +187,45 @@ function fillPromptTemplate(promptTemplate, variables = {}) {
   return filledPrompt;
 }
 
+/**
+ * Funkcja do prostego opisu zdjęcia posiłku
+ * @param {String} imagePath - Ścieżka do pliku zdjęcia
+ * @returns {Promise<String>} - Tekstowy opis posiłku
+ */
+async function getImageDescription(imagePath) {
+  // Sprawdzamy czy AI jest włączone
+  if (process.env.AI_ENABLED !== 'true') {
+    throw new Error('Funkcja analizy zdjęcia jest niedostępna. Włącz AI_ENABLED w zmiennych środowiskowych.');
+  }
+  
+  try {
+    // Przygotowanie formularza z plikiem
+    const formData = new FormData();
+    formData.append('file', fs.createReadStream(imagePath));
+    
+    // Wysłanie żądania do serwisu AI
+    const response = await axios.post(`${AI_SERVICE_URL}/analyze-image-description`, formData, {
+      headers: {
+        ...formData.getHeaders()
+      },
+      timeout: 30000 // 30 sekund timeout - analiza obrazu może trwać dłużej
+    });
+    
+    if (response.status === 200 && response.data && response.data.description) {
+      return response.data.description;
+    } else {
+      throw new Error('Nieprawidłowa odpowiedź z serwisu AI');
+    }
+  } catch (error) {
+    console.error('Błąd podczas analizy opisu zdjęcia:', error.message);
+    throw error;
+  }
+}
+
 module.exports = {
   getAiAnalysis,
+  analyzeImage,
+  getImageDescription,
   getDietRecommendations,
   getPrompt,
   fillPromptTemplate
